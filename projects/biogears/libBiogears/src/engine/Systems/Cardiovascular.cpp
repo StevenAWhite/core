@@ -1197,7 +1197,7 @@ void Cardiovascular::Hemorrhage()
 
   //We already filtered tourniquet actions during Action Loading to make sure that we do not have a tourniquet that A) Aligns with a non-existent hemorrhage
   //or B) refers to an incompatible compartments.  We are therefore safe to loop through this map without further checks.
-  
+
   for (auto tPair : tourniquets) {
     tournCmpt = tPair.first;
     tourniquet = tPair.second;
@@ -1443,15 +1443,23 @@ void Cardiovascular::CalculateAndSetCPRcompressionForce()
 /// Cardiac arrest is the sudden loss of effective blood circulation. When the cardiac arrest
 /// action is active, the heart will not beat effectively and breathing will not occur.
 //--------------------------------------------------------------------------------------------------
+
 void Cardiovascular::CardiacArrest()
 {
-  // If there is no call for a cardiac arrest, return to ProcessActions
-  if (!m_data.GetActions().GetPatientActions().HasCardiacArrest())
-    return;
-  // Flip the cardiac arrest switch
-  // This tells the CV system that a cardiac arrest has been initiated.
-  // The cardiac arrest event will be triggered by CardiacCycleCalculations() at the end of the cardiac cycle.
-  m_EnterCardiacArrest = true;
+  if (m_data.GetActions().GetPatientActions().HasCardiacArrest()) {
+    if (m_data.GetActions().GetPatientActions().GetCardiacArrest()->IsActive()) {
+      m_EnterCardiacArrest = true;
+    } else {
+      m_data.GetActions().GetPatientActions().RemoveCardiacArrest();
+      m_patient->SetEvent(CDM::enumPatientEvent::CardiacArrest, false, m_data.GetSimulationTime());
+      m_patient->SetEvent(CDM::enumPatientEvent::Asystole, false, m_data.GetSimulationTime());
+      m_EnterCardiacArrest = false;
+      m_StartSystole = true;
+      SetHeartRhythm(CDM::enumHeartRhythm::NormalSinus);
+      GetHeartRate().SetValue(75, FrequencyUnit::Per_min);
+      m_CurrentCardiacCycleDuration_s = .86; //Magic Number picked by testing the average value per cycle fr a minute to help dapen HR spikes.
+    }
+  }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1562,7 +1570,6 @@ void Cardiovascular::BeginCardiacCycle()
   double diastolicOverride_mmHg = GetDiastolicArterialPressure().GetValue(PressureUnit::mmHg);
   double HeartDriverFrequency_Per_Min = m_patient->GetHeartRateBaseline(FrequencyUnit::Per_min);
 
-
   if (m_data.GetActions().GetPatientActions().HasOverride() && m_data.GetActions().GetPatientActions().GetOverride()->GetOverrideConformance() == CDM::enumOnOff::On) {
     SEOverride* override = m_data.GetActions().GetPatientActions().GetOverride();
     m_OverrideOnOffCheck = true;
@@ -1643,6 +1650,7 @@ void Cardiovascular::BeginCardiacCycle()
   }
 
   BLIM(HeartDriverFrequency_Per_Min, m_data.GetPatient().GetHeartRateMinimum(FrequencyUnit::Per_min), m_data.GetPatient().GetHeartRateMaximum(FrequencyUnit::Per_min));
+  m_OverrideHR_Conformant_Per_min = HeartDriverFrequency_Per_Min;
   m_OverrideHR_Conformant_Per_min = HeartDriverFrequency_Per_Min;
   //Apply heart failure effects
   m_LeftHeartElastanceMax_mmHg_Per_mL *= m_LeftHeartElastanceModifier;
